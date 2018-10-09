@@ -124,6 +124,23 @@ class Structured2DMesh(object):
 	def j(self, P):
 		return self.cell_j[P]
 
+	def show_mesh(self):
+		import matplotlib.pyplot as plt
+		P = self.cells
+		iP, jP = self.i(P), self.j(P)
+		plt.scatter(mesh.x.cells[iP], mesh.y.cells[jP], color = 'black', alpha = 0.25)
+		P = self.cells[1:-1, 1:-1]
+		iP, jP = self.i(P), self.j(P)
+		plt.scatter(mesh.x.cells[iP], mesh.y.cells[jP], color = 'black', alpha = 1)
+		#plt.xlim(self.x.faces[0], self.x.faces[-1])
+		#plt.ylim(self.y.faces[0], self.y.faces[-1])
+		x_min, x_max = self.x.faces[0], self.x.faces[-1]
+		y_min, y_max = self.y.faces[0], self.y.faces[-1]
+		for y_face in self.y.faces: plt.plot([x_min, x_max], [y_face]*2, color ='black', alpha = 0.5)
+		for x_face in self.x.faces: plt.plot([x_face]*2, [y_min, y_max], color ='black', alpha = 0.5)
+		plt.axis('equal')
+		plt.show()
+
 
 
 ''' Representation of a variable defined at the cell centers. Provides interpolation functions to calculate the value at cell faces. '''
