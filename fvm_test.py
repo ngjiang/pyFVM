@@ -31,24 +31,28 @@ class Axis(object):
 		if len(faces) != len(set(faces)):
 			raise ValueError("The face coordinate array contains duplicated positions. No cell can have zero volume.")
 		self.faces = np.array(faces)
-		self.cells = 0.5 * (self.faces[:-1] + self.faces[1:])
-		self.num = len(self.cells)
-		self.cell_widths = (self.faces[1:] - self.faces[:-1])
+		self.cells = np.concatenate([ [faces[0]], 0.5 * (self.faces[:-1] + self.faces[1:]), [faces[-1]] ])
+		# Two Ghost Cells added on the two sides.
+		self.num = len(self.faces) - 1
+		# self.num indicates the number of real cells, i.e. without counting the Ghost Cells.
+		# self.cells has self.num+2 elements
+		self.cell_widths = np.concatenate([[0.], (self.faces[1:] - self.faces[:-1]), [0.]])
+		# Corresponding widths of cells. Ghost Cells have zero width.
 
 	''' Width of the cell at the specified index. '''
 	def h(self, i):
 		return self.cell_widths[i]
 
 	''' Distance between centroids in the backward direction. '''
-	def hm(self, i):
-		if not check_index_within_bounds(i, 1, self.num-1):
-			raise ValueError("hm index runs out of bounds")
+	def hb(self, i):
+		if not check_index_within_bounds(i, 1, self.num+1):
+			raise ValueError("hb index runs out of bounds")
 		return (self.cells[i] - self.cells[i-1])
 
 	''' Distance between centroids in the forward direction. '''
-	def hp(self, i):
-		if not check_index_within_bounds(i, 0, self.num-2):
-			raise ValueError("hp index runs out of bounds")
+	def hf(self, i):
+		if not check_index_within_bounds(i, 0, self.num):
+			raise ValueError("hf index runs out of bounds")
 		return (self.cells[i+1] - self.cells[i])
 
 ''' Class of 2D mesh cell-centered mesh defined by two axes x and y '''
@@ -58,42 +62,61 @@ class Structured2DMesh(object):
 		self.x = x
 		self.y = y
 		# Construction of cells
-		self.cells = np.arange(x.num * y.num).reshape(x.num, y.num)
-		self.cell_j, self.cell_i = np.meshgrid(np.arange(y.num), np.arange(x.num))
-		self.cell_i = self.cell_i.reshape(x.num * y.num)
-		self.cell_j = self.cell_j.reshape(x.num * y.num)
+		# Cell numbers on x and on y
+		Cx = len(x.cells)
+		Cy = len(y.cells)
+		# Face numbers on x and on y
+		Fx = len(x.faces)
+		Fy = len(y.faces)
+
+		self.cells = np.arange(Cx * Cy).reshape(Cx, Cy)
+		self.cell_j, self.cell_i = np.meshgrid(np.arange(Cy), np.arange(Cx))
+		self.cell_i = self.cell_i.reshape(Cx * Cy)
+		self.cell_j = self.cell_j.reshape(Cx * Cy)
 		self.cell_x, self.cell_y = x.cells[self.cell_i], y.cells[self.cell_j]
 
 		# Construction of faces
-		self.faces = np.arange((x.num+1)*y.num + x.num*(y.num+1))
+		self.faces = np.arange(Fx*Cy + Cx*Fy)
 		## Faces to the direction of x, type of w and e
-		self.faces_to_x = self.faces[:(x.num+1)*y.num].reshape(x.num+1, y.num)
-		self.face_to_x_j, self.face_to_x_i = np.meshgrid(np.arange(y.num), np.arange(x.num+1))
+		self.faces_to_x = self.faces[:Fx*Cy].reshape(Fx, Cy)
+		self.face_to_x_j, self.face_to_x_i = np.meshgrid(np.arange(Cy), np.arange(Fx))
 		## Faces in direction of y, type of s and n
-		self.faces_to_y = self.faces[(x.num+1)*y.num:].reshape(x.num, y.num+1)
-		self.face_to_y_j, self.face_to_y_i = np.meshgrid(np.arange(y.num+1), np.arange(x.num))
+		self.faces_to_y = self.faces[Fx*Cy:].reshape(Cx, Fy)
+		self.face_to_y_j, self.face_to_y_i = np.meshgrid(np.arange(Fy), np.arange(Cx))
 		#
-		self.face_x = np.concatenate([self.x.faces[self.face_to_x_i].reshape((x.num+1)*y.num), self.x.cells[self.face_to_y_i].reshape(x.num*(y.num+1))])
-		self.face_y = np.concatenate([self.y.cells[self.face_to_x_j].reshape((x.num+1)*y.num), self.y.faces[self.face_to_y_j].reshape(x.num*(y.num+1))])
+		self.face_x = np.concatenate([self.x.faces[self.face_to_x_i].reshape(Fx*Cy), self.x.cells[self.face_to_y_i].reshape(Cx*Fy)])
+		self.face_y = np.concatenate([self.y.cells[self.face_to_x_j].reshape(Fx*Cy), self.y.faces[self.face_to_y_j].reshape(Cx*Fy)])
 	# Define neighboring cells
 	def W(self, P):
-		return self.cells[self.cell_i[P]-1, self.cell_j[P]  ]
+		ci, cj = self.cell_i[P], self.cell_j[P]
+		return self.cells[np.where(ci-1>0, ci-1, 0), cj]
 	def E(self, P):
-		return self.cells[self.cell_i[P]-1, self.cell_j[P]  ]
+		ci, cj = self.cell_i[P], self.cell_j[P]
+		return self.cells[np.where(ci<=self.x.num, ci+1, self.x.num+1), cj]
 	def S(self, P):
-		return self.cells[self.cell_i[P],   self.cell_j[P]-1]
+		ci, cj = self.cell_i[P], self.cell_j[P]
+		return self.cells[ci, np.where(cj-1>0, cj-1, 0)]
 	def N(self, P):
-		return self.cells[self.cell_i[P],   self.cell_j[P]+1]
+		ci, cj = self.cell_i[P], self.cell_j[P]
+		return self.cells[ci, np.where(cj<=self.y.num, cj+1, self.y.num+1)]
 
 	# Define neighboring faces
+
+	# With Ghost Cells:
+	# Cells: 0- -1- -2- -3
+	# Faces:  -0- -1- -2-
 	def w(self, P):
-		return self.faces_to_x[self.cell_i[P],   self.cell_j[P]  ]
+		ci, cj = self.cell_i[P], self.cell_j[P]
+		return self.faces_to_x[np.where(ci-1>0, ci-1, 0), cj]
 	def e(self, P):
-		return self.faces_to_x[self.cell_i[P]+1, self.cell_j[P]  ]
+		ci, cj = self.cell_i[P], self.cell_j[P]
+		return self.faces_to_x[np.where(ci<=self.x.num, ci, self.x.num), cj]
 	def s(self, P):
-		return self.faces_to_y[self.cell_i[P],   self.cell_j[P]  ]
+		ci, cj = self.cell_i[P], self.cell_j[P]
+		return self.faces_to_y[ci, np.where(cj-1>0, cj-1, 0)]
 	def n(self, P):
-		return self.faces_to_y[self.cell_i[P],   self.cell_j[P]+1]
+		ci, cj = self.cell_i[P], self.cell_j[P]
+		return self.faces_to_y[ci, np.where(cj<=self.y.num, cj, self.y.num)]
 
 	# Define i and j
 	def i(self, P):
@@ -105,7 +128,7 @@ class Structured2DMesh(object):
 
 ''' Representation of a variable defined at the cell centers. Provides interpolation functions to calculate the value at cell faces. '''
 # http://docs.scipy.org/doc/numpy/user/basics.subclassing.html
-class CellVariable(np.ndarray):
+class CellScalar(np.ndarray):
 	def __new__(cls, input_array, mesh = None):
 		# Conversion of 'input_array' to array if it is actually a function of (x,y)
 		if hasattr(input_array, '__call__'):
@@ -115,7 +138,7 @@ class CellVariable(np.ndarray):
 			try:
 				len(input_array)
 			except:
-				input_array = input_array * np.ones(mesh.x.num * mesh.y.num)
+				input_array = input_array * np.ones(len(mesh.x.cells) * len(mesh.y.cells))
 
 		obj = np.asarray(input_array).view(cls)
 		obj.mesh = mesh
@@ -126,36 +149,38 @@ class CellVariable(np.ndarray):
 		self.mesh = getattr(obj, 'mesh', None)
 		self.__get_items__ = getattr(obj, '__get_items__', None)
 
+	# Interpolation needs to work with ndarray
+	# Applicable for real cells only
 	''' Linear interpolation of the cell value at the west face '''
 	def w(self, P):
+		W = self.mesh.W(P)
+		iP, iW = self.mesh.i(P), self.mesh.i(W)
 		x, y = self.mesh.x, self.mesh.y
-		iP = self.mesh.i(P); iW = iP - 1
-		W = self.mesh.cells[iW, self.mesh.cell_j[P]]
-		return (x.h(iP)*self[W] + x.h(iW)*self[P])/(2*x.hm(iP))
+		return (x.h(iP)*self[W] + x.h(iW)*self[P])/(2*x.hb(iP))
 	''' Linear interpolation of the cell value at the east face '''
 	def e(self, P):
+		E = self.mesh.E(P)
+		iP, iE = self.mesh.i(P), self.mesh.i(E)
 		x, y = self.mesh.x, self.mesh.y
-		iP = self.mesh.i(P); iE = iP + 1
-		E = self.mesh.cells[iE, self.mesh.cell_j[P]]
-		return (x.h(iP)*self[E] + x.h(iE)*self[P])/(2*x.hp(iP))
+		return (x.h(iP)*self[E] + x.h(iE)*self[P])/(2*x.hf(iP))
 	''' Linear interpolation of the cell value at the south face '''
 	def s(self, P):
+		S = self.mesh.S(P)
+		jP, jS = self.mesh.j(P), self.mesh.j(S)
 		x, y = self.mesh.x, self.mesh.y
-		jP = self.mesh.j(P); jS = jP - 1
-		S = self.mesh.cells[self.mesh.cell_i[P], jS]
-		return (y.h(jP)*self[S] + y.h(jS)*self[P])/(2*y.hm(jP))
+		return (y.h(jP)*self[S] + y.h(jS)*self[P])/(2*y.hb(jP))
 	''' Linear interpolation of the cell value at the north face '''
 	def n(self, P):
+		N = self.mesh.N(P)
+		jP, jN = self.mesh.j(P), self.mesh.j(N)
 		x, y = self.mesh.x, self.mesh.y
-		jP = self.mesh.j(P); jN = jP + 1
-		N = self.mesh.cells[self.mesh.cell_i[P], jN]
-		return (y.h(jP)*self[N] + y.h(jN)*self[P])/(2*y.hp(jP))
+		return (y.h(jP)*self[N] + y.h(jN)*self[P])/(2*y.hf(jP))
 
 	def on_faces(self):
-		return FaceVariable(self)
+		return FaceScalar(self)
 
 ''' Representation of a variable defined at the face centers. '''
-class FaceVariable(np.ndarray):
+class FaceScalar(np.ndarray):
 	def __new__(cls, input_array, mesh = None):
 		# Conversion of 'input_array' to array if it is actually a function of (x,y)
 		if hasattr(input_array, '__call__'):
@@ -191,8 +216,11 @@ if __name__ == '__main__':
 	plt.scatter(np.zeros(len(y_faces)), y_faces)
 	plt.show()
 	'''
-	a = CellVariable(1, mesh=mesh)
+	a = CellScalar(1, mesh=mesh)
 
 	#def f(x,y): return y/np.sqrt(x)
 	def f(x, y): return x+y
-	b = CellVariable(f, mesh=mesh)
+	b = CellScalar(f, mesh=mesh)
+
+	P = np.array([1,8,15,22,29,36])
+	Q = np.array([7,8,9,10,11,12,13])
