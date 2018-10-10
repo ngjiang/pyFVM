@@ -217,6 +217,13 @@ class FaceScalar(np.ndarray):
 		if obj is None: return
 		self.mesh = getattr(obj, 'mesh', None)
 		self.__get_items__ = getattr(obj, '__get_items__', None)
+'''
+class CellVector(np.ndarray):
+	def __new__(cls, input_array, mesh = None):
+		# may be defined with two CellScalar or one fct.
+'''
+
+
 
 if __name__ == '__main__':
 	#x_faces = np.linspace(0,1,30)
