@@ -7,6 +7,7 @@ import numpy as np
 from scipy import sparse
 from scipy.sparse import linalg
 from scipy.sparse import dia_matrix
+from scipy.sparse import csr_matrix
 np.random.seed(seed = 1)
 
 ''' Checks that the index specified (can be number or an iterable) is strictly within the given range. '''
@@ -207,7 +208,7 @@ class FaceScalar(np.ndarray):
 			try:
 				len(input_array)
 			except:
-				input_array = input_array * np.ones(mesh.x.num * mesh.y.num)
+				input_array = input_array * np.ones(len(mesh.x.faces)*len(mesh.y.cells) + len(mesh.x.cells)*len(mesh.y.faces))
 
 		obj = np.asarray(input_array).view(cls)
 		obj.mesh = mesh
@@ -217,13 +218,60 @@ class FaceScalar(np.ndarray):
 		if obj is None: return
 		self.mesh = getattr(obj, 'mesh', None)
 		self.__get_items__ = getattr(obj, '__get_items__', None)
-'''
+
 class CellVector(np.ndarray):
 	def __new__(cls, input_array, mesh = None):
-		# may be defined with two CellScalar or one fct.
-'''
+		# Conversion of 'input_array' to array if it is actually a function of (x,y)
+		if hasattr(input_array, '__call__'):
+			input_array = input_array(mesh.cell_x, mesh.cell_y).T
+		# Conversion of 'input_array' to array if it is actually just a constant
+		else :
+			try:
+				len(input_array.T[0])
+				# Length test on Vx
+			except:
+				Vx, Vy = input_array
+				#input_array = input_array * np.ones(len(mesh.x.cells) * len(mesh.y.cells) * 2).reshape(len(mesh.x.cells) * len(mesh.y.cells), 2)
+				#print '(Vx, Vy) = ', Vx, Vy
+				input_array = np.array([Vx * np.ones(len(mesh.x.cells)*len(mesh.y.cells)),
+				Vy * np.ones(len(mesh.x.cells)*len(mesh.y.cells))])
+				return input_array.T
 
+		obj = np.asarray(input_array).view(cls)
+		obj.mesh = mesh
+		return obj
 
+	def __array_finalize__(self, obj):
+		if obj is None: return
+		self.mesh = getattr(obj, 'mesh', None)
+		self.__get_items__ = getattr(obj, '__get_items__', None)
+
+# Not working.
+class fvMatrix(object):
+	def __init__(self, operator, mesh=None):
+		super(fvMatrix, self).__init__()
+		P = mesh.cells[1:-1,1:-1].reshape(mesh.x.num * mesh.y.num)
+		self.row = np.concatenate([P]*5)
+		self.col = np.concatenate([mesh.W(P), mesh.E(P), mesh.S(P), mesh.N(P), P])
+		'''
+		Demonstration descretization of laplacian operator
+		W - w --- P --- e - E
+		      h/2   h/2
+
+		  d2T   dT |    dT |    TE - TP   TP - TW
+		h --- = -- |  - -- |  = ------- - -------
+		  dx2   dx |e   dx |w     hf         hb
+		'''
+		a={\
+			'W': 1./mesh.x.hb(mesh.i(P))/mesh.x.h(mesh.i(P)),\
+			'E': 1./mesh.x.hf(mesh.i(P))/mesh.x.h(mesh.i(P)),\
+			'S': 1./mesh.y.hb(mesh.j(P))/mesh.y.h(mesh.j(P)),\
+			'N': 1./mesh.y.hf(mesh.i(P))/mesh.y.h(mesh.j(P))\
+		}
+		self.data = np.concatenate([a['W'], a['E'], a['S'], a['N'],\
+			-a['W']-a['E']-a['S']-a['N']])
+		n_matrix = len(mesh.x.cells) * len(mesh.y.cells)
+		#return csr_matrix((data, (row, col)), shape=(n_matrix, n_matrix), dtype = np.float64)
 
 if __name__ == '__main__':
 	#x_faces = np.linspace(0,1,30)
@@ -243,8 +291,8 @@ if __name__ == '__main__':
 	a = CellScalar(1, mesh=mesh)
 
 	#def f(x,y): return y/np.sqrt(x)
-	def f(x, y): return x+y
-	b = CellScalar(f, mesh=mesh)
+	def f(x, y): return np.array([x+y,x-y])
+	b = CellVector(f, mesh=mesh)
 
 	P = np.array([1,8,15,22,29,36])
 	Q = np.array([7,8,9,10,11,12,13])
