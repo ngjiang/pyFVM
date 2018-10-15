@@ -125,7 +125,7 @@ class Structured2DMesh(object):
 	def j(self, P):
 		return self.cell_j[P]
 
-	def show_mesh(self):
+	def show(self):
 		import matplotlib.pyplot as plt
 		P = self.cells
 		iP, jP = self.i(P), self.j(P)
@@ -139,8 +139,8 @@ class Structured2DMesh(object):
 		y_min, y_max = self.y.faces[0], self.y.faces[-1]
 		for y_face in self.y.faces: plt.plot([x_min, x_max], [y_face]*2, color ='black', alpha = 0.5)
 		for x_face in self.x.faces: plt.plot([x_face]*2, [y_min, y_max], color ='black', alpha = 0.5)
-		plt.axis('equal')
-		plt.show()
+		#plt.axis('equal')
+		#plt.show()
 
 
 
@@ -297,9 +297,9 @@ class fvBoundary(object):
 		corners = np.array([[0,0], [0,-1], [-1,0], [-1,-1]]).T
 		corners = mesh.cells[corners[0], corners[1]]
 		# Continue here !
-		self.row = np.array([])
-		self.col = np.array([])
-		self.data = np.array([])
+		self.row = np.concatenate([corners]*5)
+		self.col = np.concatenate([mesh.W(corners), mesh.E(corners), mesh.S(corners), mesh.N(corners), corners])
+		self.data = np.concatenate([np.ones(len(corners))]*4 + [np.ones(len(corners))*-4])
 		# Non-intrinsic definition: specific to rectangular mesh
 		self.patch = {\
 			'W': mesh.cells[ 0,1:-1],\
@@ -320,9 +320,9 @@ class fvBoundary(object):
 		patch = [self.patch[patch_name], self.patch_neighbor[patch_name]]
 		self.row = np.concatenate([self.row, patch[0], patch[0]])
 		self.col = np.concatenate([self.col, patch[0], patch[1]])
-		if(patch_name in ['W','E']): 
+		if(patch_name in ['W','E']):
 			h = [self.mesh.x.h(self.mesh.i(patch[0])), self.mesh.x.h(self.mesh.i(patch[1]))]
-		if(patch_name in ['S','N']): 
+		if(patch_name in ['S','N']):
 			h = [self.mesh.y.h(self.mesh.j(patch[0])), self.mesh.y.h(self.mesh.j(patch[1]))]
 		self.data = np.concatenate([self.data, h[1]/(h[0]+h[1]), h[0]/(h[0]+h[1])])
 		self.B[patch[0]] += constant
@@ -330,25 +330,25 @@ class fvBoundary(object):
 		patch = [self.patch[patch_name], self.patch_neighbor[patch_name]]
 		self.row = np.concatenate([self.row, patch[0], patch[0]])
 		self.col = np.concatenate([self.col, patch[0], patch[1]])
-		if(patch_name in ['W','E']): 
+		if(patch_name in ['W','E']):
 			h = self.mesh.x.cells[self.mesh.i(patch[0])] - self.mesh.x.cells[self.mesh.i(patch[1])]
-		if(patch_name in ['S','N']): 
+		if(patch_name in ['S','N']):
 			h = self.mesh.y.cells[self.mesh.j(patch[0])] - self.mesh.y.cells[self.mesh.j(patch[1])]
 		self.data = np.concatenate([self.data, np.ones(len(patch[0])), -np.ones(len(patch[1]))])
-		self.B[patch[0]] += constant * h
+		self.B[patch[0]] += constant * np.abs(h)
 	def matrix(self):
 		matrix_size = len(self.mesh.x.cells) * len(self.mesh.y.cells)
 		return csr_matrix((self.data, (self.row, self.col)), shape = (matrix_size, matrix_size))
-		
+
 
 
 if __name__ == '__main__':
 	#x_faces = np.linspace(0,1,30)
-	x_faces = np.linspace(0,1,5)
+	x_faces = np.linspace(0,2, 11)
 	xx = Axis(x_faces)
 	# y_faces = np.concatenate([np.linspace(0, 0.8, 9), 1-np.logspace(np.log10(0.2), np.log10(1e-3), 21)[1:], [1]])
 	#y_faces = np.concatenate([[0], np.logspace(np.log10(1e-3), np.log10(0.2), 11)[:-1], np.linspace(0.2, 1, 5)])
-	y_faces = np.linspace(0,1,6)
+	y_faces = np.linspace(0,1,5)
 	yy = Axis(y_faces)
 	mesh = Structured2DMesh(xx, yy)
 	'''
@@ -365,36 +365,39 @@ if __name__ == '__main__':
 
 	#P = np.array([1,8,15,22,29,36])
 	#Q = np.array([7,8,9,10,11,12,13])
-	
+
 	A = fvMatrix('lap', mesh=mesh).matrix()
-	
+
 	bc = fvBoundary(mesh=mesh)
-	bc.add_constant_dirichlet('S', -1)
-	bc.add_constant_dirichlet('N', 1)
-	bc.add_constant_neumann('W', 1)
+	bc.add_constant_dirichlet('S', 0)
+	bc.add_constant_neumann('N', 1)
+	bc.add_constant_neumann('W', -1)
 	bc.add_constant_neumann('E', -1)
 	A = A + bc.matrix()
 	T = linalg.spsolve(A, bc.B)
 	#print T.reshape(mesh.x.num+2, mesh.y.num+2)
-	
+
 	import matplotlib.pyplot as plt
 	#plt.contourf(xx.cells, yy.cells, T.reshape(xx.num+2, yy.num+2).T)
 	#plt.axis('equal')
 	#plt.show()
-	
+
 	from mpl_toolkits.axes_grid1 import make_axes_locatable
 	plt.figure()
 	ax = plt.gca()
-	
+
+
 	extent = np.min(xx.cells), np.max(xx.cells), np.min(yy.cells), np.max(yy.cells)
-	ct = plt.contourf(xx.cells, yy.cells, T.reshape(xx.num+2, yy.num+2).T, 20, 
-		#cmap=plt.cm.viridis, 
+	ct = plt.contourf(xx.cells, yy.cells, T.reshape(xx.num+2, yy.num+2).T, 20,
+		#cmap=plt.cm.viridis,
 		alpha=.9, interpolation='bilinear', extent=extent)
 	#plt.quiver(x, y, U[0], U[1], units='width')
+	#mesh.show()
+
 	plt.xlabel('$x$')
 	plt.ylabel('$y$')
 	plt.axis('equal')
-	
+
 	# create an axes on the right side of ax. The width of cax will be 5%
 	# of ax and the padding between cax and ax will be fixed at 0.05 inch.
 	divider = make_axes_locatable(ax)
@@ -403,5 +406,3 @@ if __name__ == '__main__':
 	plt.tight_layout()
 	plt.show()
 	#plt.savefig('./T.pdf',bbox_inches='tight')
-
-	
