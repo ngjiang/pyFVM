@@ -293,25 +293,31 @@ class fvBoundary(object):
 	def __init__(self, mesh=None):
 		super(fvBoundary, self).__init__()
 		self.mesh = mesh
+		# Initialization: Corner point = average of two neighbors
+		corners = np.array([[0,0], [0,-1], [-1,0], [-1,-1]]).T
+		corners = mesh.cells[corners[0], corners[1]]
+		# Continue here !
 		self.row = np.array([])
 		self.col = np.array([])
 		self.data = np.array([])
+		# Non-intrinsic definition: specific to rectangular mesh
 		self.patch = {\
-			'W': mesh.cells[ 0,:],\
-			'E': mesh.cells[-1,:],\
-			'S': mesh.cells[:, 0],\
-			'N': mesh.cells[:,-1]\
+			'W': mesh.cells[ 0,1:-1],\
+			'E': mesh.cells[-1,1:-1],\
+			'S': mesh.cells[1:-1, 0],\
+			'N': mesh.cells[1:-1,-1]\
 		}
+		# Non-intrinsic definition: specific to rectangular mesh
 		self.patch_neighbor = {\
-			'W': mesh.cells[ 1,:],\
-			'E': mesh.cells[-2,:],\
-			'S': mesh.cells[:, 1],\
-			'N': mesh.cells[:,-2]\
+			'W': mesh.cells[ 1,1:-1],\
+			'E': mesh.cells[-2,1:-1],\
+			'S': mesh.cells[1:-1, 1],\
+			'N': mesh.cells[1:-1,-2]\
 		}
 		self.B = np.zeros(len(mesh.x.cells)*len(mesh.y.cells))
 
 	def add_constant_dirichlet(self, patch_name, constant):
-		patch = [self.patch[patch_name][1:-1], self.patch_neighbor[patch_name][1:-1]]
+		patch = [self.patch[patch_name], self.patch_neighbor[patch_name]]
 		self.row = np.concatenate([self.row, patch[0], patch[0]])
 		self.col = np.concatenate([self.col, patch[0], patch[1]])
 		if(patch_name in ['W','E']): 
@@ -342,7 +348,7 @@ if __name__ == '__main__':
 	xx = Axis(x_faces)
 	# y_faces = np.concatenate([np.linspace(0, 0.8, 9), 1-np.logspace(np.log10(0.2), np.log10(1e-3), 21)[1:], [1]])
 	#y_faces = np.concatenate([[0], np.logspace(np.log10(1e-3), np.log10(0.2), 11)[:-1], np.linspace(0.2, 1, 5)])
-	y_faces = np.linspace(0,1,5)
+	y_faces = np.linspace(0,1,6)
 	yy = Axis(y_faces)
 	mesh = Structured2DMesh(xx, yy)
 	'''
@@ -363,11 +369,39 @@ if __name__ == '__main__':
 	A = fvMatrix('lap', mesh=mesh).matrix()
 	
 	bc = fvBoundary(mesh=mesh)
-	bc.add_constant_dirichlet('S', 0)
-	bc.add_constant_dirichlet('N', 0)
+	bc.add_constant_dirichlet('S', -1)
+	bc.add_constant_dirichlet('N', 1)
 	bc.add_constant_neumann('W', 1)
-	bc.add_constant_neumann('E', 1)
+	bc.add_constant_neumann('E', -1)
 	A = A + bc.matrix()
 	T = linalg.spsolve(A, bc.B)
-	print T.reshape(mesh.x.num+2, mesh.y.num+2)
+	#print T.reshape(mesh.x.num+2, mesh.y.num+2)
+	
+	import matplotlib.pyplot as plt
+	#plt.contourf(xx.cells, yy.cells, T.reshape(xx.num+2, yy.num+2).T)
+	#plt.axis('equal')
+	#plt.show()
+	
+	from mpl_toolkits.axes_grid1 import make_axes_locatable
+	plt.figure()
+	ax = plt.gca()
+	
+	extent = np.min(xx.cells), np.max(xx.cells), np.min(yy.cells), np.max(yy.cells)
+	ct = plt.contourf(xx.cells, yy.cells, T.reshape(xx.num+2, yy.num+2).T, 20, 
+		#cmap=plt.cm.viridis, 
+		alpha=.9, interpolation='bilinear', extent=extent)
+	#plt.quiver(x, y, U[0], U[1], units='width')
+	plt.xlabel('$x$')
+	plt.ylabel('$y$')
+	plt.axis('equal')
+	
+	# create an axes on the right side of ax. The width of cax will be 5%
+	# of ax and the padding between cax and ax will be fixed at 0.05 inch.
+	divider = make_axes_locatable(ax)
+	cax = divider.append_axes("right", size="5%", pad=0.05)
+	plt.colorbar(ct, cax=cax)
+	plt.tight_layout()
+	plt.show()
+	#plt.savefig('./T.pdf',bbox_inches='tight')
+
 	
