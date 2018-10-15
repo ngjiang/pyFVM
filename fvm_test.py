@@ -246,10 +246,15 @@ class CellVector(np.ndarray):
 		self.mesh = getattr(obj, 'mesh', None)
 		self.__get_items__ = getattr(obj, '__get_items__', None)
 
-# Not working.
+'''
+Matrix for interior domain
+'''
 class fvMatrix(object):
 	def __init__(self, operator, mesh=None):
 		super(fvMatrix, self).__init__()
+		self.mesh = mesh
+		if(operator == 'lap'): self.laplacian()
+	def laplacian(self):
 		P = mesh.cells[1:-1,1:-1].reshape(mesh.x.num * mesh.y.num)
 		self.row = np.concatenate([P]*5)
 		self.col = np.concatenate([mesh.W(P), mesh.E(P), mesh.S(P), mesh.N(P), P])
@@ -262,16 +267,74 @@ class fvMatrix(object):
 		h --- = -- |  - -- |  = ------- - -------
 		  dx2   dx |e   dx |w     hf         hb
 		'''
+		'''
 		a={\
 			'W': 1./mesh.x.hb(mesh.i(P))/mesh.x.h(mesh.i(P)),\
 			'E': 1./mesh.x.hf(mesh.i(P))/mesh.x.h(mesh.i(P)),\
 			'S': 1./mesh.y.hb(mesh.j(P))/mesh.y.h(mesh.j(P)),\
 			'N': 1./mesh.y.hf(mesh.i(P))/mesh.y.h(mesh.j(P))\
 		}
+		'''
+		a={\
+			'W': 1./mesh.x.hb(mesh.i(P))*mesh.y.h(mesh.j(P)),\
+			'E': 1./mesh.x.hf(mesh.i(P))*mesh.y.h(mesh.j(P)),\
+			'S': 1./mesh.y.hb(mesh.j(P))*mesh.x.h(mesh.i(P)),\
+			'N': 1./mesh.y.hf(mesh.j(P))*mesh.x.h(mesh.i(P))\
+		}
 		self.data = np.concatenate([a['W'], a['E'], a['S'], a['N'],\
 			-a['W']-a['E']-a['S']-a['N']])
-		n_matrix = len(mesh.x.cells) * len(mesh.y.cells)
+		#n_matrix = len(mesh.x.cells) * len(mesh.y.cells)
 		#return csr_matrix((data, (row, col)), shape=(n_matrix, n_matrix), dtype = np.float64)
+	def matrix(self):
+		matrix_size = len(self.mesh.x.cells) * len(self.mesh.y.cells)
+		return csr_matrix((self.data, (self.row, self.col)), shape = (matrix_size, matrix_size))
+
+class fvBoundary(object):
+	def __init__(self, mesh=None):
+		super(fvBoundary, self).__init__()
+		self.mesh = mesh
+		self.row = np.array([])
+		self.col = np.array([])
+		self.data = np.array([])
+		self.patch = {\
+			'W': mesh.cells[ 0,:],\
+			'E': mesh.cells[-1,:],\
+			'S': mesh.cells[:, 0],\
+			'N': mesh.cells[:,-1]\
+		}
+		self.patch_neighbor = {\
+			'W': mesh.cells[ 1,:],\
+			'E': mesh.cells[-2,:],\
+			'S': mesh.cells[:, 1],\
+			'N': mesh.cells[:,-2]\
+		}
+		self.B = np.zeros(len(mesh.x.cells)*len(mesh.y.cells))
+
+	def add_constant_dirichlet(self, patch_name, constant):
+		patch = [self.patch[patch_name][1:-1], self.patch_neighbor[patch_name][1:-1]]
+		self.row = np.concatenate([self.row, patch[0], patch[0]])
+		self.col = np.concatenate([self.col, patch[0], patch[1]])
+		if(patch_name in ['W','E']): 
+			h = [self.mesh.x.h(self.mesh.i(patch[0])), self.mesh.x.h(self.mesh.i(patch[1]))]
+		if(patch_name in ['S','N']): 
+			h = [self.mesh.y.h(self.mesh.j(patch[0])), self.mesh.y.h(self.mesh.j(patch[1]))]
+		self.data = np.concatenate([self.data, h[1]/(h[0]+h[1]), h[0]/(h[0]+h[1])])
+		self.B[patch[0]] += constant
+	def add_constant_neumann(self, patch_name, constant):
+		patch = [self.patch[patch_name], self.patch_neighbor[patch_name]]
+		self.row = np.concatenate([self.row, patch[0], patch[0]])
+		self.col = np.concatenate([self.col, patch[0], patch[1]])
+		if(patch_name in ['W','E']): 
+			h = self.mesh.x.cells[self.mesh.i(patch[0])] - self.mesh.x.cells[self.mesh.i(patch[1])]
+		if(patch_name in ['S','N']): 
+			h = self.mesh.y.cells[self.mesh.j(patch[0])] - self.mesh.y.cells[self.mesh.j(patch[1])]
+		self.data = np.concatenate([self.data, np.ones(len(patch[0])), -np.ones(len(patch[1]))])
+		self.B[patch[0]] += constant * h
+	def matrix(self):
+		matrix_size = len(self.mesh.x.cells) * len(self.mesh.y.cells)
+		return csr_matrix((self.data, (self.row, self.col)), shape = (matrix_size, matrix_size))
+		
+
 
 if __name__ == '__main__':
 	#x_faces = np.linspace(0,1,30)
@@ -279,7 +342,7 @@ if __name__ == '__main__':
 	xx = Axis(x_faces)
 	# y_faces = np.concatenate([np.linspace(0, 0.8, 9), 1-np.logspace(np.log10(0.2), np.log10(1e-3), 21)[1:], [1]])
 	#y_faces = np.concatenate([[0], np.logspace(np.log10(1e-3), np.log10(0.2), 11)[:-1], np.linspace(0.2, 1, 5)])
-	y_faces = np.linspace(0,1,6)
+	y_faces = np.linspace(0,1,5)
 	yy = Axis(y_faces)
 	mesh = Structured2DMesh(xx, yy)
 	'''
@@ -294,5 +357,17 @@ if __name__ == '__main__':
 	def f(x, y): return np.array([x+y,x-y])
 	b = CellVector(f, mesh=mesh)
 
-	P = np.array([1,8,15,22,29,36])
-	Q = np.array([7,8,9,10,11,12,13])
+	#P = np.array([1,8,15,22,29,36])
+	#Q = np.array([7,8,9,10,11,12,13])
+	
+	A = fvMatrix('lap', mesh=mesh).matrix()
+	
+	bc = fvBoundary(mesh=mesh)
+	bc.add_constant_dirichlet('S', 0)
+	bc.add_constant_dirichlet('N', 0)
+	bc.add_constant_neumann('W', 1)
+	bc.add_constant_neumann('E', 1)
+	A = A + bc.matrix()
+	T = linalg.spsolve(A, bc.B)
+	print T.reshape(mesh.x.num+2, mesh.y.num+2)
+	
