@@ -1,0 +1,58 @@
+\documentclass{article}
+
+\usepackage[english]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{subcaption}
+
+\usepackage{tikz,pgf}
+\usepackage{xcolor}
+\usetikzlibrary{decorations.pathmorphing,shadows,positioning} 
+\usetikzlibrary{patterns}
+\usetikzlibrary{arrows,shapes}
+%\usepackage{beamerfoils,tikz,pgf}
+\usepackage{hyperref}
+
+
+%\graphicspath{{../figures/}}
+\usepackage[a4paper, left=2cm, right=3cm, top=2cm, bottom=3cm]{geometry}
+%\newcommand{\bm}[1]{\mbox{\boldmath{$#1$}}}
+
+\usepackage{amsmath}
+\usepackage{enumerate}
+
+\title{Solution of Boussinesq equation with Python}
+%namespace Blasius
+\author{JIANG Nan (Gabriel) \\ under direction of \\ Bérengère PODVIN and Etienne STUDER}
+%\date{December 8, 2016\\ \it first modification: December 12, 2016\\ second modification: December 14, 2016}
+\begin{document}
+\maketitle
+%\tableofcontents
+%\newpage
+
+\section{Equations}
+We solve the non-dimensionalized Boussinesq equations:
+\begin{equation}
+\nabla \cdot U = 0
+\end{equation}
+\begin{equation}
+\frac{\partial}{\partial t} U + U \cdot \nabla U 
+- \frac{1}{\text{Re}} \nabla^2 U
+= - \nabla p_d + T \frac{-g}{\|g\|}
+\end{equation}
+\begin{equation}
+\frac{\partial}{\partial t} + U \cdot \nabla T
+- \frac{1}{\text{Re} \cdot \text{Pr}} \nabla^2 T = 0
+\end{equation}
+
+
+
+
+%\bibliographystyle{../iso690}
+%\bibliography{../references}
+
+\end{document}
